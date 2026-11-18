@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-  TOOL_DEFINITIONS,
-  handleToolCall,
-  type ToolDefinition,
+  createToolCallHandler,
   type ToolCallResult,
-} from "../src/handlers.js";
+} from "../src/application/createToolCallHandler.js";
+import {
+  TOOL_DEFINITIONS,
+  type ToolDefinition,
+} from "../src/application/toolDefinitions.js";
+import { createMockBankingDataGateway } from "../src/infrastructure/mock/createMockBankingDataGateway.js";
+
+const handleToolCall = createToolCallHandler(createMockBankingDataGateway());
 
 function firstText(result: ToolCallResult): string {
   const block = result.content[0];
