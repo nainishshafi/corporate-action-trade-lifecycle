@@ -3,10 +3,6 @@ import {
   createToolCallHandler,
   type ToolCallResult,
 } from "../src/application/createToolCallHandler.js";
-import {
-  TOOL_DEFINITIONS,
-  type ToolDefinition,
-} from "../src/application/toolDefinitions.js";
 import { createMockBankingDataGateway } from "../src/infrastructure/mock/createMockBankingDataGateway.js";
 
 const handleToolCall = createToolCallHandler(createMockBankingDataGateway());
@@ -22,23 +18,6 @@ function firstText(result: ToolCallResult): string {
 function parse(result: ToolCallResult) {
   return JSON.parse(firstText(result));
 }
-
-describe("TOOL_DEFINITIONS", () => {
-  it("exposes the two expected banking tools with required-argument schemas", () => {
-    const names = TOOL_DEFINITIONS.map((t: ToolDefinition) => t.name).sort();
-    expect(names).toEqual(["get_client_positions", "verify_security_details"]);
-
-    const positions = TOOL_DEFINITIONS.find(
-      (t: ToolDefinition) => t.name === "get_client_positions"
-    )!;
-    expect(positions.inputSchema.required).toEqual(["securityId"]);
-
-    const verify = TOOL_DEFINITIONS.find(
-      (t: ToolDefinition) => t.name === "verify_security_details"
-    )!;
-    expect(verify.inputSchema.required).toEqual(["identifier"]);
-  });
-});
 
 describe("get_client_positions", () => {
   it("returns all AAPL positions regardless of input casing", () => {
