@@ -1,0 +1,16 @@
+# Node.js
+node_modules/
+dist/
+coverage/
+
+# Java
+target/
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
