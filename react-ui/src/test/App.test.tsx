@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import axios from 'axios'
-import App from './App'
-import { CorporateAction } from './types'
+import App from '../App'
+import { CorporateAction } from '../types'
 
 vi.mock('axios')
 
