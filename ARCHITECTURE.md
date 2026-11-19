@@ -112,26 +112,27 @@ The Java module is the authoritative business host.
 - **Web layer**: `com.demo.ca.web`
   - `GET /api/ca/pending`
   - `POST /api/ca/{id}/approve`
-  - RFC 7807 `ProblemDetail` is used for API error responses.
+  - `POST /api/ca/{id}/reject`
+  - RFC 7807 `ProblemDetail` is used for API error responses (including `404`, `409`, and `503` when the AI boundary is unavailable).
 
 ### Python Agent: Reasoning Layer
 
 The Python service is responsible for:
 
 - interpreting the incoming notification
-- deciding which MCP tools to call
-- synthesizing the narrative AI analysis
+- deciding which MCP tools to call (`verify_security_details`, then `get_client_positions`) inside a bounded reasoning loop
+- synthesizing the narrative AI analysis from observed tool results
 - returning normalized impact data to Java
 
-In the current repo, the reasoning loop is simulated but intentionally shaped like a real agent workflow. The evaluation entrypoint lives in `python-agent/evals/run_evals.py`.
+In the current repo, the reasoning loop uses a deterministic `SimulatedLLMProvider` and an in-process `MockBankingGateway` implementing `BankingGateway` (reading from `shared/mock-banking-data.json`) so the service runs standalone while preserving the exact tool-calling seam. The evaluation entrypoint lives in `python-agent/evals/run_evals.py`.
 
 ### Node MCP: Tool Exposure Layer
 
-The Node server is the tool boundary between the AI agent and banking data.
+The Node server is the standalone MCP tool boundary between an external AI client and banking data.
 
 - **Domain**: `bankingDataGateway.ts`
 - **Application**: `createToolCallHandler.ts`, `toolDefinitions.ts`
-- **Infrastructure**: mock banking gateway
+- **Infrastructure**: mock banking gateway backed by `shared/mock-banking-data.json`
 - **Bootstrap**: `createServer.ts`
 
 Current tools:
@@ -180,9 +181,10 @@ The aggregate protects invariants through behavior:
 
 ```text
 PENDING -> ANALYZED -> APPROVED -> EXECUTED
+                   \-> REJECTED
 ```
 
-Current implemented operator workflow centers on the `ANALYZED -> APPROVED` transition.
+Current implemented operator workflow supports both `ANALYZED -> APPROVED` and `ANALYZED -> REJECTED` transitions, and deduplicates incoming notifications that match an existing awaiting-approval action (`securityId`, `actionType`, `ratio`, `exDate`).
 
 ### Persistence Strategy
 
@@ -212,6 +214,8 @@ This keeps JDBC connections short-lived and prevents external latency from leaki
   - used by the React dashboard
 - `POST /api/ca/{id}/approve`
   - records the human approval decision
+- `POST /api/ca/{id}/reject`
+  - records the human rejection decision
 
 ### AI Contract
 

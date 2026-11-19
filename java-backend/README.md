@@ -43,10 +43,10 @@ mvn test
 ```
 
 ### **API Documentation**
-The API follows RESTful principles and returns standardized error responses. Key endpoints:
-- `GET /api/ca`: List corporate actions.
-- `POST /api/ca/analyze`: Trigger AI analysis for a new corporate action.
-- `POST /api/ca/{id}/approve`: Approve a pending trade execution (requires Human-in-the-Loop).
+The API follows RESTful principles and returns standardized RFC 7807 `ProblemDetail` error responses. Key endpoints:
+- `GET /api/ca/pending`: List analyzed corporate actions awaiting human-in-the-loop review.
+- `POST /api/ca/{id}/approve`: Approve an analyzed corporate action for execution (requires Human-in-the-Loop).
+- `POST /api/ca/{id}/reject`: Reject an analyzed corporate action.
 
 ## **Project Structure**
 - `src/main/java/com/demo/ca/domain`: Core business logic and aggregate roots.

@@ -40,6 +40,7 @@ During local development, Vite proxies frontend API calls from `/api/*` to the J
 Current frontend API usage:
 - `GET /api/ca/pending`: Fetch pending or reviewable corporate actions for the dashboard.
 - `POST /api/ca/{id}/approve`: Approve an action for execution after operator review.
+- `POST /api/ca/{id}/reject`: Reject an analyzed corporate action after operator review.
 
 The UI expects a `CorporateAction` payload with:
 - action identity and security metadata
@@ -107,6 +108,5 @@ npm run lint
 - `vite.config.ts`: Vite dev server, proxy, and Vitest configuration.
 
 ## **Current Scope**
-- The dashboard currently focuses on review and approval of corporate actions.
-- The `Reject` button is present in the UI but is not yet wired to a backend workflow.
+- The dashboard supports operator review, approval (`Approve & Execute`), and rejection (`Reject`) of analyzed corporate actions, along with an explicit empty state when no actions await review.
 - This frontend assumes the backend is the source of truth for lifecycle transitions and execution rules.

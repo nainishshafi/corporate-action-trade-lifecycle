@@ -17,7 +17,7 @@ The scenario models a stock-split notification flowing through an AI-assisted li
 3. The Python agent analyzes the event and decides what data it needs
 4. The agent retrieves banking data through MCP tools exposed by the Node service
 5. The Java host persists the analyzed action and exposes it for review
-6. An operations user reviews and approves the action in the React UI
+6. An operations user reviews and approves or rejects the action in the React UI
 
 The goal is not just to "make a demo work", but to show:
 - clean dependency boundaries
@@ -34,6 +34,7 @@ The goal is not just to "make a demo work", but to show:
 ├── python-agent/   # FastAPI AI reasoning service
 ├── node-mcp/       # MCP server exposing banking tools
 ├── react-ui/       # HITL dashboard
+├── shared/         # Canonical demo banking fixture shared by node-mcp & python-agent
 ├── ARCHITECTURE.md # Architecture walkthrough
 └── README.md
 ```
@@ -105,7 +106,8 @@ python main.py
 
 ```powershell
 cd "c:\Users\naini\corporate-action-trade-lifecycle\node-mcp"
-node src/index.ts
+npm run build
+npm start
 ```
 
 ### React UI
@@ -137,7 +139,8 @@ python -m pytest -q
 ```powershell
 cd "c:\Users\naini\corporate-action-trade-lifecycle\node-mcp"
 npm test
-npx tsc --noEmit
+npm run typecheck
+npm run build
 ```
 
 ### React UI
@@ -152,7 +155,7 @@ npm test
 Some of the design choices this repository intentionally showcases:
 
 - **Java backend:** domain logic separated from infrastructure and web adapters
-- **Node MCP:** handler logic depends on an injected banking-data gateway instead of hard-coded mock lookups
+- **Node MCP & Python Agent:** both consume the canonical fixture in `shared/mock-banking-data.json` behind gateway ports rather than duplicating mock arrays
 - **Composition roots:** runtime wiring happens at the edge, not inside business logic
 - **Readable tests:** tests follow the current module structure instead of stale flat-file naming
 

@@ -74,20 +74,21 @@ Required input:
 ```powershell
 cd "c:\Users\naini\corporate-action-trade-lifecycle\node-mcp"
 npm test
-npx tsc --noEmit
+npm run typecheck
 ```
 
 ### Run Module
 
-To run the module entrypoint:
+To build and run the module entrypoint:
 
 ```powershell
 cd "c:\Users\naini\corporate-action-trade-lifecycle\node-mcp"
-node src/index.ts
+npm run build
+npm start
 ```
 
 ## Notes
 
-- This module currently uses a **mock infrastructure adapter** for demo purposes.
+- This module currently uses a **mock infrastructure adapter** backed by `shared/mock-banking-data.json` (shared as a single source of truth with `python-agent`).
 - The mock implementation is intentionally isolated so it can be replaced later by a real banking adapter without changing application-layer tool orchestration.
 - The test suite is split by module responsibility rather than keeping a stale flat `handlers.test.ts` structure.
