@@ -1,57 +1,43 @@
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
-from ai_agent.domain.banking_gateway import PositionRecord, SecurityRecord
+from ai_agent.domain.banking_gateway import (
+    PositionRecord,
+    SecurityNotFoundError,
+    SecurityRecord,
+)
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_FIXTURE_PATH = Path(__file__).resolve().parents[3] / "shared" / "mock-banking-data.json"
+
 
 class MockBankingGateway:
-    def __init__(self) -> None:
-        self._securities = {
-            "AAPL": SecurityRecord(
-                id="AAPL",
-                name="Apple Inc.",
-                isin="US0378331005",
-                price=180.50,
-                currency="USD",
-            ),
-            "MSFT": SecurityRecord(
-                id="MSFT",
-                name="Microsoft Corp.",
-                isin="US5949181045",
-                price=400.25,
-                currency="USD",
-            ),
-            "GOOGL": SecurityRecord(
-                id="GOOGL",
-                name="Alphabet Inc.",
-                isin="US02079K3059",
-                price=140.10,
-                currency="USD",
-            ),
-        }
-        self._positions = [
-            PositionRecord(accountId="ACC-001", securityId="AAPL", quantity=100),
-            PositionRecord(accountId="ACC-002", securityId="AAPL", quantity=50),
-            PositionRecord(accountId="ACC-003", securityId="MSFT", quantity=200),
-            PositionRecord(accountId="ACC-004", securityId="AAPL", quantity=75),
-        ]
+    def __init__(self, fixture_path: Path = _DEFAULT_FIXTURE_PATH) -> None:
+        raw_data = json.loads(fixture_path.read_text(encoding="utf-8"))
+        securities = [SecurityRecord(**item) for item in raw_data["securities"]]
+        self._securities_by_id = {security.id.upper(): security for security in securities}
+        self._securities_by_isin = {security.isin.upper(): security for security in securities}
+        self._positions = [PositionRecord(**item) for item in raw_data["positions"]]
 
     async def verify_security_details(self, identifier: str) -> SecurityRecord:
         normalized = identifier.strip().upper()
         logger.info("Mock gateway verifying security identifier=%s", normalized)
-        security = self._securities.get(normalized)
+        security = self._securities_by_id.get(normalized) or self._securities_by_isin.get(normalized)
         if security is None:
-            raise LookupError(f"Security lookup failed for identifier {normalized}.")
+            raise SecurityNotFoundError(f"Security lookup failed for identifier {normalized}.")
         return security
 
     async def get_client_positions(self, security_id: str) -> list[PositionRecord]:
         normalized = security_id.strip().upper()
-        logger.info("Mock gateway fetching positions for securityId=%s", normalized)
+        resolved = self._securities_by_isin.get(normalized)
+        canonical_id = resolved.id.upper() if resolved is not None else normalized
+        logger.info("Mock gateway fetching positions for securityId=%s", canonical_id)
         return [
             position
             for position in self._positions
-            if position.securityId == normalized
+            if position.securityId.upper() == canonical_id
         ]

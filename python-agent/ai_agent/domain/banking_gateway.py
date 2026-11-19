@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class SecurityNotFoundError(LookupError):
+    """Raised when a security identifier cannot be resolved in the banking system."""
+
+
 @dataclass(frozen=True)
 class SecurityRecord:
     id: str

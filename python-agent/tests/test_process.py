@@ -3,8 +3,10 @@ from fastapi.testclient import TestClient
 
 from ai_agent.app import app
 from ai_agent.dependencies import get_reasoning_agent
+from ai_agent.domain.banking_gateway import PositionRecord, SecurityNotFoundError, SecurityRecord
 from ai_agent.domain.reasoning_engine import ReasoningAgent
 from ai_agent.infrastructure.mock_banking_gateway import MockBankingGateway
+from ai_agent.infrastructure.simulated_llm_provider import SimulatedLLMProvider
 
 client = TestClient(app)
 
@@ -69,6 +71,63 @@ def test_process_uses_notification_values_instead_of_hardcoded_aapl_defaults():
     assert body["impacts"][0]["newQuantity"] == 300.0
 
 
+def test_process_handles_structured_scheduler_payloads():
+    single_quoted = "{ 'type': 'MT564', 'security': 'AAPL', 'action': 'SPLIT', 'ratio': '2:1' }"
+    double_quoted = '{"type": "MT564", "security": "MSFT", "action": "SPLIT", "ratio": "2:1"}'
+
+    first = client.post("/process", json={"raw_message": single_quoted})
+    assert first.status_code == 200
+    assert first.json()["securityId"] == "AAPL"
+    assert len(first.json()["impacts"]) == 3
+
+    second = client.post("/process", json={"raw_message": double_quoted})
+    assert second.status_code == 200
+    assert second.json()["securityId"] == "MSFT"
+    assert len(second.json()["impacts"]) == 1
+
+
+def test_process_skips_action_keywords_before_ticker_in_natural_wording():
+    split_response = client.post("/process", json={"raw_message": "SPLIT FOR AAPL 2:1"})
+    assert split_response.status_code == 200
+    assert split_response.json()["securityId"] == "AAPL"
+
+    dividend_response = client.post("/process", json={"raw_message": "CASH DIVIDEND ON MSFT"})
+    assert dividend_response.status_code == 200
+    assert dividend_response.json()["securityId"] == "MSFT"
+    assert dividend_response.json()["actionType"] == "CASH_DIVIDEND"
+
+
+def test_process_resolves_security_by_isin():
+    response = client.post(
+        "/process",
+        json={"raw_message": "MT564: US0378331005 2:1 Split, Ex-Date 2026-12-01"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["securityId"] == "AAPL"
+    assert len(body["impacts"]) == 3
+
+
+def test_process_returns_404_for_unknown_security():
+    response = client.post(
+        "/process",
+        json={"raw_message": "MT564: NVDA 2:1 Split, Ex-Date 2026-12-01"},
+    )
+    assert response.status_code == 404
+
+
+def test_process_returns_422_for_unparseable_notification_or_non_positive_ratio():
+    no_ticker = client.post("/process", json={"raw_message": "no ticker here at all"})
+    assert no_ticker.status_code == 422
+
+    zero_numerator = client.post("/process", json={"raw_message": "AAPL 0:1 split"})
+    assert zero_numerator.status_code == 422
+
+    zero_denominator = client.post("/process", json={"raw_message": "AAPL 2:0 split"})
+    assert zero_denominator.status_code == 422
+
+
 def test_process_analysis_text_is_human_readable_for_hitl_review():
     body = client.post("/process", json={"raw_message": "AAPL split"}).json()
 
@@ -104,9 +163,12 @@ def test_process_rejects_blank_raw_message():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_verify_security_details_resolves_known_ticker():
-    result = await MockBankingGateway().verify_security_details("AAPL")
-    assert result.isin == "US0378331005"
+async def test_verify_security_details_resolves_known_ticker_and_isin():
+    gateway = MockBankingGateway()
+    by_ticker = await gateway.verify_security_details("AAPL")
+    by_isin = await gateway.verify_security_details("US0378331005")
+    assert by_ticker.isin == "US0378331005"
+    assert by_isin.id == "AAPL"
 
 
 @pytest.mark.asyncio
@@ -117,15 +179,13 @@ async def test_get_client_positions_returns_holdings():
 
 @pytest.mark.asyncio
 async def test_verify_security_details_rejects_unknown_identifier():
-    with pytest.raises(LookupError):
+    with pytest.raises(SecurityNotFoundError):
         await MockBankingGateway().verify_security_details("UNKNOWN")
 
 
 def test_process_uses_injected_agent_dependency():
     class TestGateway:
         async def verify_security_details(self, identifier: str):
-            from ai_agent.domain.banking_gateway import SecurityRecord
-
             return SecurityRecord(
                 id="TSLA",
                 name="Tesla, Inc.",
@@ -135,11 +195,7 @@ def test_process_uses_injected_agent_dependency():
             )
 
         async def get_client_positions(self, security_id: str):
-            from ai_agent.domain.banking_gateway import PositionRecord
-
             return [PositionRecord(accountId="ACC-999", securityId="TSLA", quantity=10)]
-
-    from ai_agent.infrastructure.simulated_llm_provider import SimulatedLLMProvider
 
     test_agent = ReasoningAgent(SimulatedLLMProvider(), TestGateway())
     app.dependency_overrides[get_reasoning_agent] = lambda: test_agent
@@ -152,4 +208,6 @@ def test_process_uses_injected_agent_dependency():
         app.dependency_overrides.clear()
 
     assert body["securityId"] == "TSLA"
+    assert "Tesla, Inc." in body["aiAnalysis"]
+    assert "US88160R1014" in body["aiAnalysis"]
     assert body["impacts"][0]["accountId"] == "ACC-999"

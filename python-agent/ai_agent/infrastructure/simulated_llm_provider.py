@@ -1,89 +1,103 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Dict, Any, Optional
-from ai_agent.domain.reasoning_engine import LLMProvider, ReasoningResult, ToolCall
-from ai_agent.parsing.notification_parser import parse_notification
+from collections.abc import Sequence
+
+from ai_agent.domain.banking_gateway import PositionRecord, SecurityRecord
+from ai_agent.domain.reasoning_engine import (
+    LLMProvider,
+    ReasoningResult,
+    ToolCall,
+    ToolObservation,
+)
+from ai_agent.parsing.notification_parser import ParsedNotification, parse_notification
 
 logger = logging.getLogger(__name__)
 
+
 class SimulatedLLMProvider(LLMProvider):
     """
-    An implementation of LLMProvider that simulates a reasoning LLM.
-    It uses deterministic rules to mirror how an LLM would use tool calling.
+    Deterministic LLMProvider simulator that drives a multi-step tool-calling loop
+    across security verification and client position retrieval.
     """
-    async def get_completion(self, prompt: str, tools: Optional[List[Dict[str, Any]]] = None) -> ReasoningResult | ToolCall:
-        logger.info("Simulated LLM receiving prompt.")
-        
-        # Determine if this is a follow-up prompt with tool results
-        if "Tool Result" in prompt:
-            return self._synthesize_final_result(prompt)
-        
-        # Extract the raw message from the instruction prompt
-        # Prompt is: f"Analyze the following corporate action notification: {raw_message}"
-        if "Analyze the following corporate action notification: " in prompt:
-            raw_message = prompt.split("Analyze the following corporate action notification: ")[1]
-        else:
-            raw_message = prompt
 
-        # Otherwise, parse the message to decide which tool to call
-        try:
-            parsed = parse_notification(raw_message)
-            logger.info("Simulated LLM deciding to call tool: verify_security_details")
+    async def get_completion(
+        self,
+        raw_message: str,
+        observations: Sequence[ToolObservation] = (),
+    ) -> ReasoningResult | ToolCall:
+        logger.info("Simulated LLM evaluating message with %d observations.", len(observations))
+        parsed = parse_notification(raw_message)
+
+        security = _find_security_observation(observations)
+        if security is None:
+            logger.info("Simulated LLM requesting tool: verify_security_details")
             return ToolCall(
                 tool_name="verify_security_details",
-                arguments={"identifier": parsed.security_id}
-            )
-        except Exception:
-            return ReasoningResult(
-                analysis="I'm sorry, I couldn't parse the notification message.",
-                metadata={"error": "Parsing failed"}
+                arguments={"identifier": parsed.security_id},
             )
 
-    def _synthesize_final_result(self, prompt: str) -> ReasoningResult:
-        # This mirrors the 'synthesis' phase of a real LLM
-        # We extract info from the prompt (which now contains tool results)
-        logger.info("Simulated LLM synthesizing final result.")
-        
-        # Extract the original message to re-parse (simulation shortcut)
-        # In a real LLM, these would be in the conversation context
-        raw_message = prompt.split("Analyze the following corporate action notification: ")[1].split("\n")[0]
-        parsed = parse_notification(raw_message)
-        
-        # Extract security info from the prompt if it's there
-        # prompt looks like: f"{prompt}\nTool Result for {result.tool_name}: {tool_result}"
-        security_info = ""
-        if "Tool Result for verify_security_details" in prompt:
-            # We know the format of SecurityRecord.__repr__ or similar
-            # In a real simulation, we'd parse this back or have a proper context object
-            # For this demo, we'll just check if it's Apple or Microsoft based on parsed ID
-            if parsed.security_id == "AAPL":
-                security_info = "Apple Inc. (US0378331005)"
-            elif parsed.security_id == "MSFT":
-                security_info = "Microsoft Corp. (US5949181045)"
-            else:
-                security_info = parsed.security_id
+        positions = _find_positions_observation(observations)
+        if positions is None:
+            logger.info("Simulated LLM requesting tool: get_client_positions")
+            return ToolCall(
+                tool_name="get_client_positions",
+                arguments={"securityId": security.id},
+            )
 
-        quantity_impact = (
-            "Shares will increase in quantity." 
-            if parsed.ratio_multiplier != 1.0 
-            else "Holdings remain unchanged in quantity."
-        )
+        return _synthesize_final_result(parsed, security, positions)
 
-        return ReasoningResult(
-            analysis=(
-                f"I have analyzed the MT564 notification for {security_info}. "
-                f"I identified a {parsed.action_type.replace('_', ' ').title()} "
-                f"with ratio {parsed.ratio}. I used banking MCP tools to verify "
-                f"positions and security data. {quantity_impact}"
-            ),
-            metadata={
-                "securityId": parsed.security_id,
-                "actionType": parsed.action_type,
-                "ratio": parsed.ratio,
-                "recordDate": parsed.record_date,
-                "exDate": parsed.ex_date,
-                "payDate": parsed.pay_date,
-                "ratio_multiplier": parsed.ratio_multiplier
-            }
-        )
+
+def _find_security_observation(observations: Sequence[ToolObservation]) -> SecurityRecord | None:
+    for observation in observations:
+        if (
+            observation.tool_name == "verify_security_details"
+            and isinstance(observation.result, SecurityRecord)
+        ):
+            return observation.result
+    return None
+
+
+def _find_positions_observation(
+    observations: Sequence[ToolObservation],
+) -> list[PositionRecord] | None:
+    for observation in observations:
+        if (
+            observation.tool_name == "get_client_positions"
+            and isinstance(observation.result, list)
+        ):
+            return observation.result
+    return None
+
+
+def _synthesize_final_result(
+    parsed: ParsedNotification,
+    security: SecurityRecord,
+    positions: list[PositionRecord],
+) -> ReasoningResult:
+    security_info = f"{security.name} ({security.isin})"
+    if parsed.ratio_multiplier > 1.0:
+        quantity_impact = "Shares will increase in quantity."
+    elif parsed.ratio_multiplier < 1.0:
+        quantity_impact = "Shares will decrease in quantity."
+    else:
+        quantity_impact = "Holdings remain unchanged in quantity."
+
+    analysis = (
+        f"I have analyzed the MT564 notification for {security_info}. "
+        f"I identified a {parsed.action_type.replace('_', ' ').title()} "
+        f"with ratio {parsed.ratio}. I used banking MCP tools to verify "
+        f"positions and security data. {quantity_impact}"
+    )
+
+    return ReasoningResult(
+        security_id=security.id,
+        action_type=parsed.action_type,
+        ratio=parsed.ratio,
+        ratio_multiplier=parsed.ratio_multiplier,
+        record_date=parsed.record_date,
+        ex_date=parsed.ex_date,
+        pay_date=parsed.pay_date,
+        analysis=analysis,
+        positions=tuple(positions),
+    )

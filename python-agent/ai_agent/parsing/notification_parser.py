@@ -4,9 +4,62 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-SECURITY_PATTERN = re.compile(r"\b(?!(?:THE|FOR|AND|WITH|FROM)\b)([A-Z]{2,5})\b")
+STRUCTURED_SECURITY_PATTERN = re.compile(
+    r"['\"]?security(?:_id|Id)?['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9]{2,12})['\"]?",
+    re.IGNORECASE,
+)
+ISIN_PATTERN = re.compile(r"\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b")
+TICKER_TOKEN_PATTERN = re.compile(r"\b([A-Z]{2,5})\b")
 RATIO_PATTERN = re.compile(r"\b(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)\b")
 EX_DATE_PATTERN = re.compile(r"\bEX[- ]DATE\s*[:=]?\s*(\d{4}-\d{2}-\d{2})\b", re.IGNORECASE)
+
+NON_TICKER_WORDS = frozenset(
+    {
+        "THE",
+        "FOR",
+        "AND",
+        "WITH",
+        "FROM",
+        "THIS",
+        "THAT",
+        "INTO",
+        "OVER",
+        "TYPE",
+        "ACTION",
+        "RATIO",
+        "SPLIT",
+        "STOCK",
+        "CASH",
+        "DIVIDEND",
+        "MERGER",
+        "RIGHTS",
+        "BONUS",
+        "ISSUE",
+        "DATE",
+        "EX",
+        "PAY",
+        "RECORD",
+        "SWIFT",
+        "EVENT",
+        "CORP",
+        "SHARE",
+        "SHARES",
+        "ON",
+        "OF",
+        "TO",
+        "IN",
+        "AT",
+        "BY",
+        "IS",
+        "ARE",
+        "NEW",
+        "OLD",
+        "PER",
+        "USD",
+        "EUR",
+        "GBP",
+    }
+)
 
 ACTION_PATTERNS = (
     (re.compile(r"\b(CASH\s+DIVIDEND|DIVIDEND)\b", re.IGNORECASE), "CASH_DIVIDEND"),
@@ -15,6 +68,10 @@ ACTION_PATTERNS = (
     (re.compile(r"\b(MERGER|ACQUISITION|TAKEOVER|FUSION)\b", re.IGNORECASE), "MERGER"),
     (re.compile(r"\b(STOCK\s+SPLIT|SPLIT)\b", re.IGNORECASE), "STOCK_SPLIT"),
 )
+
+
+class NotificationParseError(ValueError):
+    """Raised when a corporate action notification cannot be parsed into valid parameters."""
 
 
 @dataclass(frozen=True)
@@ -29,32 +86,30 @@ class ParsedNotification:
 
 
 def parse_notification(raw_message: str) -> ParsedNotification:
-    normalized = raw_message.upper()
-
-    security_match = SECURITY_PATTERN.search(normalized)
-    if not security_match:
-        raise ValueError("Could not detect security identifier (ticker) in notification message.")
-
-    security_id = security_match.group(1)
+    security_id = _extract_security_id(raw_message)
     action_type = _detect_action_type(raw_message)
+    normalized = raw_message.upper()
 
     ratio_match = RATIO_PATTERN.search(normalized)
     if ratio_match:
         numerator = float(ratio_match.group(1))
         denominator = float(ratio_match.group(2))
-        if denominator == 0:
-            raise ValueError("Split ratio denominator cannot be zero.")
+        if numerator <= 0 or denominator <= 0:
+            raise NotificationParseError("Split ratio values must be positive.")
         ratio = f"{_format_ratio_value(numerator)}:{_format_ratio_value(denominator)}"
         ratio_multiplier = numerator / denominator
     else:
         ratio, ratio_multiplier = _default_ratio_for_action(action_type)
 
     ex_date_match = EX_DATE_PATTERN.search(normalized)
-    ex_date = (
-        date.fromisoformat(ex_date_match.group(1))
-        if ex_date_match
-        else date(2026, 11, 24)
-    )
+    if ex_date_match:
+        try:
+            ex_date = date.fromisoformat(ex_date_match.group(1))
+        except ValueError as exc:
+            raise NotificationParseError(f"Invalid ex-date: {ex_date_match.group(1)}") from exc
+    else:
+        ex_date = date(2026, 11, 24)
+
     record_date = ex_date - timedelta(days=1)
     pay_date = ex_date + timedelta(days=4)
 
@@ -66,6 +121,25 @@ def parse_notification(raw_message: str) -> ParsedNotification:
         record_date=record_date.isoformat(),
         ex_date=ex_date.isoformat(),
         pay_date=pay_date.isoformat(),
+    )
+
+
+def _extract_security_id(raw_message: str) -> str:
+    structured_match = STRUCTURED_SECURITY_PATTERN.search(raw_message)
+    if structured_match:
+        return structured_match.group(1).upper()
+
+    isin_match = ISIN_PATTERN.search(raw_message.upper())
+    if isin_match:
+        return isin_match.group(1)
+
+    for match in TICKER_TOKEN_PATTERN.finditer(raw_message):
+        candidate = match.group(1)
+        if candidate not in NON_TICKER_WORDS:
+            return candidate
+
+    raise NotificationParseError(
+        "Could not detect security identifier (ticker or ISIN) in notification message."
     )
 
 
