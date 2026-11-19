@@ -1,34 +1,39 @@
+import { readFileSync } from "node:fs";
 import type {
   BankingDataGateway,
   PositionRecord,
   SecurityRecord,
 } from "../../domain/bankingDataGateway.js";
 
-const MOCK_SECURITIES: readonly SecurityRecord[] = [
-  { id: "AAPL", name: "Apple Inc.", isin: "US0378331005", price: 180.5, currency: "USD" },
-  { id: "MSFT", name: "Microsoft Corp.", isin: "US5949181045", price: 400.25, currency: "USD" },
-  { id: "GOOGL", name: "Alphabet Inc.", isin: "US02079K3059", price: 140.1, currency: "USD" },
-];
+interface MockBankingFixture {
+  securities: readonly SecurityRecord[];
+  positions: readonly PositionRecord[];
+}
 
-const MOCK_POSITIONS: readonly PositionRecord[] = [
-  { accountId: "ACC-001", securityId: "AAPL", quantity: 100 },
-  { accountId: "ACC-002", securityId: "AAPL", quantity: 50 },
-  { accountId: "ACC-003", securityId: "MSFT", quantity: 200 },
-  { accountId: "ACC-004", securityId: "AAPL", quantity: 75 },
-];
+const FIXTURE_URL = new URL("../../../../shared/mock-banking-data.json", import.meta.url);
+
+function loadFixtureData(): MockBankingFixture {
+  const raw = readFileSync(FIXTURE_URL, "utf8");
+  return JSON.parse(raw) as MockBankingFixture;
+}
 
 /**
- * Demo-only banking adapter backed by in-memory fixtures.
+ * Demo-only banking adapter backed by the shared in-memory fixture file.
  */
 export function createMockBankingDataGateway(): BankingDataGateway {
+  const { securities, positions } = loadFixtureData();
+
   return {
     findPositionsBySecurityId(securityId: string): readonly PositionRecord[] {
-      return MOCK_POSITIONS.filter((position) => position.securityId === securityId);
+      const normalized = securityId.trim().toUpperCase();
+      return positions.filter((position) => position.securityId.toUpperCase() === normalized);
     },
 
     findSecurityByIdentifier(identifier: string): SecurityRecord | undefined {
-      return MOCK_SECURITIES.find(
-        (security) => security.id === identifier || security.isin === identifier
+      const normalized = identifier.trim().toUpperCase();
+      return securities.find(
+        (security) =>
+          security.id.toUpperCase() === normalized || security.isin.toUpperCase() === normalized
       );
     },
   };
