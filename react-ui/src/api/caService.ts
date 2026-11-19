@@ -9,5 +9,9 @@ export const caService = {
 
   approveAction: async (id: number): Promise<void> => {
     await axios.post(`/api/ca/${id}/approve`);
-  }
+  },
+
+  rejectAction: async (id: number): Promise<void> => {
+    await axios.post(`/api/ca/${id}/reject`);
+  },
 };

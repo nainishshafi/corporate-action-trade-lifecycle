@@ -13,7 +13,7 @@ export interface CorporateAction {
   recordDate: string;
   exDate: string;
   payDate: string;
-  status: 'PENDING' | 'ANALYZED' | 'APPROVED' | 'EXECUTED';
+  status: 'PENDING' | 'ANALYZED' | 'APPROVED' | 'REJECTED' | 'EXECUTED';
   aiAnalysis: string;
   impacts: PositionImpact[];
 }

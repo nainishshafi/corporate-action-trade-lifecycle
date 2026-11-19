@@ -56,15 +56,17 @@ describe('App (HITL dashboard)', () => {
     expect(screen.queryByText(/confidence:/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/received 2m ago/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /approve & execute/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /reject/i })).toBeInTheDocument()
   })
 
-  it('shows an empty dashboard when there are no actions', async () => {
+  it('shows an empty dashboard with empty-state guidance when there are no actions', async () => {
     vi.mocked(axios.get).mockResolvedValue({ data: [] })
 
     render(<App />)
 
     await waitFor(() => expect(screen.getByText('Total Actions')).toBeInTheDocument())
     expect(screen.getByText('0')).toBeInTheDocument()
+    expect(screen.getByText('No corporate actions awaiting review')).toBeInTheDocument()
   })
 
   it('approves an action through the API when the operator clicks the button', async () => {
@@ -82,7 +84,22 @@ describe('App (HITL dashboard)', () => {
     )
   })
 
-  it('disables approval while a request is in flight and prevents duplicate submits', async () => {
+  it('rejects an action through the API when the operator clicks Reject', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: [action] })
+    vi.mocked(axios.post).mockResolvedValue({ data: {} })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    const rejectButton = await screen.findByRole('button', { name: /^reject$/i })
+    await user.click(rejectButton)
+
+    await waitFor(() =>
+      expect(vi.mocked(axios.post)).toHaveBeenCalledWith('/api/ca/1/reject')
+    )
+  })
+
+  it('disables both decision buttons while a request is in flight and prevents duplicate submits', async () => {
     vi.mocked(axios.get).mockResolvedValue({ data: [action] })
 
     const approvalRequest = createDeferred<{ data: object }>()
@@ -92,19 +109,39 @@ describe('App (HITL dashboard)', () => {
     render(<App />)
 
     const approveButton = await screen.findByRole('button', { name: /approve & execute/i })
+    const rejectButton = screen.getByRole('button', { name: /^reject$/i })
     await user.click(approveButton)
 
     expect(approveButton).toBeDisabled()
+    expect(rejectButton).toBeDisabled()
     expect(approveButton).toHaveTextContent(/approving/i)
     expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(1)
 
     await user.click(approveButton)
+    await user.click(rejectButton)
     expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(1)
 
     approvalRequest.resolve({ data: {} })
 
     await waitFor(() => expect(approveButton).not.toBeDisabled())
+    expect(rejectButton).not.toBeDisabled()
     expect(approveButton).toHaveTextContent(/approve & execute/i)
+  })
+
+  it('shows inline error banners when approval or rejection fails', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: [action] })
+    vi.mocked(axios.post)
+      .mockRejectedValueOnce(new Error('approve failed'))
+      .mockRejectedValueOnce(new Error('reject failed'))
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /approve & execute/i }))
+    expect(await screen.findByText(/Failed to approve action/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^reject$/i }))
+    expect(await screen.findByText(/Failed to reject action/)).toBeInTheDocument()
   })
 
   it('shows error message when the pending-actions request fails', async () => {

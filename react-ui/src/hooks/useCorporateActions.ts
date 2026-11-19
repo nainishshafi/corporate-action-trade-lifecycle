@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { CorporateAction } from '../types';
 import { caService } from '../api/caService';
 
+export type DecisionType = 'approve' | 'reject';
+
 const isAbortError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
     return false;
@@ -14,22 +16,33 @@ export const useCorporateActions = (pollingInterval = 5000) => {
   const [actions, setActions] = useState<CorporateAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [approvingActionIds, setApprovingActionIds] = useState<number[]>([]);
-  const latestRequestIdRef = useRef(0);
-  const inFlightApprovalsRef = useRef(new Set<number>());
-  const isMountedRef = useRef(true);
+  const [pendingDecisionById, setPendingDecisionById] = useState<
+    Record<number, DecisionType>
+  >({});
 
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
+  const latestRequestIdRef = useRef(0);
+  const inFlightDecisionsRef = useRef(new Set<number>());
+  const isMountedRef = useRef(true);
+  const pollTimeoutRef = useRef<number | undefined>(undefined);
+  const activeControllerRef = useRef<AbortController | null>(null);
+
+  const clearScheduledPoll = useCallback(() => {
+    if (pollTimeoutRef.current !== undefined) {
+      window.clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = undefined;
+    }
   }, []);
 
-  const fetchActions = useCallback(async (signal?: AbortSignal) => {
+  const runFetch = useCallback(async () => {
+    clearScheduledPoll();
+    activeControllerRef.current?.abort();
+
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
     const requestId = ++latestRequestIdRef.current;
 
     try {
-      const data = await caService.getPendingActions(signal);
+      const data = await caService.getPendingActions(controller.signal);
 
       if (!isMountedRef.current || requestId !== latestRequestIdRef.current) {
         return;
@@ -37,90 +50,100 @@ export const useCorporateActions = (pollingInterval = 5000) => {
 
       setActions(data);
       setError(null);
-    } catch (error) {
+    } catch (err: unknown) {
       if (
         !isMountedRef.current ||
         requestId !== latestRequestIdRef.current ||
-        isAbortError(error)
+        isAbortError(err)
       ) {
         return;
       }
 
-      console.error('Error fetching actions:', error);
+      console.error('Error fetching actions:', err);
       setError('Failed to fetch corporate actions. Retrying...');
     } finally {
-      if (
-        isMountedRef.current &&
-        requestId === latestRequestIdRef.current &&
-        !signal?.aborted
-      ) {
-        setLoading(false);
+      if (activeControllerRef.current === controller) {
+        activeControllerRef.current = null;
       }
-    }
-  }, []);
 
-  useEffect(() => {
-    let isDisposed = false;
-    let timeoutId: number | undefined;
-    let controller: AbortController | null = null;
+      if (isMountedRef.current && requestId === latestRequestIdRef.current) {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
 
-    const poll = async () => {
-      controller = new AbortController();
-      await fetchActions(controller.signal);
-
-      if (!isDisposed) {
-        timeoutId = window.setTimeout(() => {
-          void poll();
+        pollTimeoutRef.current = window.setTimeout(() => {
+          void runFetch();
         }, pollingInterval);
       }
-    };
+    }
+  }, [clearScheduledPoll, pollingInterval]);
 
-    void poll();
+  useEffect(() => {
+    isMountedRef.current = true;
+    void runFetch();
 
     return () => {
-      isDisposed = true;
-      controller?.abort();
-
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
+      isMountedRef.current = false;
+      clearScheduledPoll();
+      activeControllerRef.current?.abort();
+      activeControllerRef.current = null;
     };
-  }, [fetchActions, pollingInterval]);
+  }, [clearScheduledPoll, runFetch]);
 
-  const approveAction = async (id: number) => {
-    if (inFlightApprovalsRef.current.has(id)) {
-      return;
-    }
+  const submitDecision = useCallback(
+    async (
+      id: number,
+      decision: DecisionType,
+      actionFn: (actionId: number) => Promise<void>,
+    ) => {
+      if (inFlightDecisionsRef.current.has(id)) {
+        return;
+      }
 
-    inFlightApprovalsRef.current.add(id);
-
-    if (isMountedRef.current) {
-      setApprovingActionIds((currentIds) => [...currentIds, id]);
-    }
-
-    try {
-      await caService.approveAction(id);
-      await fetchActions();
-    } catch (error) {
-      console.error('Error approving action:', error);
-      throw error;
-    } finally {
-      inFlightApprovalsRef.current.delete(id);
+      inFlightDecisionsRef.current.add(id);
 
       if (isMountedRef.current) {
-        setApprovingActionIds((currentIds) =>
-          currentIds.filter((currentId) => currentId !== id),
-        );
+        setPendingDecisionById((current) => ({ ...current, [id]: decision }));
       }
-    }
-  };
+
+      try {
+        await actionFn(id);
+        await runFetch();
+      } catch (err: unknown) {
+        console.error(`Error during ${decision} action:`, err);
+        throw err;
+      } finally {
+        inFlightDecisionsRef.current.delete(id);
+
+        if (isMountedRef.current) {
+          setPendingDecisionById((current) => {
+            const next = { ...current };
+            delete next[id];
+            return next;
+          });
+        }
+      }
+    },
+    [runFetch],
+  );
+
+  const approveAction = useCallback(
+    (id: number) => submitDecision(id, 'approve', caService.approveAction),
+    [submitDecision],
+  );
+
+  const rejectAction = useCallback(
+    (id: number) => submitDecision(id, 'reject', caService.rejectAction),
+    [submitDecision],
+  );
 
   return {
     actions,
     loading,
     error,
-    approvingActionIds,
+    pendingDecisionById,
     approveAction,
-    refresh: fetchActions,
+    rejectAction,
+    refresh: runFetch,
   };
 };
