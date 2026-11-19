@@ -8,9 +8,14 @@ export interface ToolDefinition {
   };
 }
 
+export const TOOL_NAMES = {
+  GET_CLIENT_POSITIONS: "get_client_positions",
+  VERIFY_SECURITY_DETAILS: "verify_security_details",
+} as const;
+
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
-    name: "get_client_positions",
+    name: TOOL_NAMES.GET_CLIENT_POSITIONS,
     description:
       "Fetch all client positions for a specific security ID (e.g., AAPL). Use this when calculating the impact of a corporate action on existing holdings.",
     inputSchema: {
@@ -25,7 +30,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
-    name: "verify_security_details",
+    name: TOOL_NAMES.VERIFY_SECURITY_DETAILS,
     description:
       "Get detailed information about a security including its ISIN and current price. Use this to cross-reference SWIFT notification details with core banking records.",
     inputSchema: {

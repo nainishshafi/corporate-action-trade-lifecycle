@@ -25,8 +25,21 @@ export function createServer(): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFINITIONS }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    return handleToolCall(name, (args ?? {}) as Record<string, unknown>);
+    try {
+      const { name, arguments: args } = request.params;
+      return handleToolCall(name, (args ?? {}) as Record<string, unknown>);
+    } catch (error) {
+      console.error("Tool execution error:", error);
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: error instanceof Error ? error.message : "Unknown tool execution error",
+          },
+        ],
+      };
+    }
   });
 
   return server;

@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { BankingDataGateway } from "../domain/bankingDataGateway.js";
+import { TOOL_NAMES } from "./toolDefinitions.js";
 
 export type ToolCallResult = CallToolResult;
 export type ToolCallHandler = (name: string, args?: Record<string, unknown>) => ToolCallResult;
@@ -30,7 +31,7 @@ export function createToolCallHandler(gateway: BankingDataGateway): ToolCallHand
     args: Record<string, unknown> = {}
   ): ToolCallResult {
     switch (name) {
-      case "get_client_positions": {
+      case TOOL_NAMES.GET_CLIENT_POSITIONS: {
         const raw = requiredString(args, "securityId");
         if (raw === null) {
           return errorResult("Missing required argument: securityId");
@@ -38,7 +39,7 @@ export function createToolCallHandler(gateway: BankingDataGateway): ToolCallHand
         return textResult(gateway.findPositionsBySecurityId(raw.toUpperCase()));
       }
 
-      case "verify_security_details": {
+      case TOOL_NAMES.VERIFY_SECURITY_DETAILS: {
         const raw = requiredString(args, "identifier");
         if (raw === null) {
           return errorResult("Missing required argument: identifier");

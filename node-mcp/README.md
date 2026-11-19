@@ -67,27 +67,23 @@ Required input:
 4. tool execution flows through the application layer
 5. banking lookups are delegated to the gateway contract
 
-## Run
+## Development
+
+### Test and Lint
 
 ```powershell
 cd "c:\Users\naini\corporate-action-trade-lifecycle\node-mcp"
 npm test
 npx tsc --noEmit
 ```
+
+### Run Module
 
 To run the module entrypoint:
 
 ```powershell
 cd "c:\Users\naini\corporate-action-trade-lifecycle\node-mcp"
 node src/index.ts
-```
-
-## Test
-
-```powershell
-cd "c:\Users\naini\corporate-action-trade-lifecycle\node-mcp"
-npm test
-npx tsc --noEmit
 ```
 
 ## Notes
