@@ -15,7 +15,11 @@ public interface AIAnalysisPort {
         String payDate,
         String aiAnalysis,
         List<ImpactResult> impacts
-    ) {}
+    ) {
+        public AIAnalysisResult {
+            impacts = impacts == null ? List.of() : List.copyOf(impacts);
+        }
+    }
 
     record ImpactResult(
         String accountId,

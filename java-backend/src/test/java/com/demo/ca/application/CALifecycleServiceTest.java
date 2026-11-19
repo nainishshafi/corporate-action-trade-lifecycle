@@ -109,6 +109,49 @@ class CALifecycleServiceTest {
     }
 
     @Test
+    void processNotificationRejectsNullAnalysisResult() {
+        when(aiAnalysisPort.analyze("MT564")).thenReturn(null);
+
+        assertThatThrownBy(() -> service.processNotification("MT564"))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("AIAnalysisResult must not be null");
+
+        verify(caRepository, never()).save(any());
+    }
+
+    @Test
+    void processNotificationNormalizesNullImpactsToEmptyList() {
+        AIAnalysisPort.AIAnalysisResult resultWithNullImpacts = new AIAnalysisPort.AIAnalysisResult(
+            "GOOGL",
+            "CASH_DIVIDEND",
+            "N/A",
+            "2026-11-23",
+            "2026-11-24",
+            "2026-11-28",
+            "Cash dividend analyzed.",
+            null);
+        when(aiAnalysisPort.analyze("MT564")).thenReturn(resultWithNullImpacts);
+        when(caRepository.save(any(CorporateAction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.processNotification("MT564");
+
+        ArgumentCaptor<CorporateAction> caCaptor = ArgumentCaptor.forClass(CorporateAction.class);
+        verify(caRepository).save(caCaptor.capture());
+        assertThat(caCaptor.getValue().getImpacts()).isEmpty();
+    }
+
+    @Test
+    void processNotificationSkipsDuplicateAwaitingApprovalAction() {
+        when(aiAnalysisPort.analyze("MT564")).thenReturn(sampleResult());
+        when(caRepository.existsAwaitingApproval(
+            "AAPL", "STOCK_SPLIT", "2:1", LocalDate.of(2026, 11, 24))).thenReturn(true);
+
+        service.processNotification("MT564");
+
+        verify(caRepository, never()).save(any());
+    }
+
+    @Test
     void processNotificationFailsFastOnInvalidDateOutsideTransaction() {
         AIAnalysisPort.AIAnalysisResult badDateResult = new AIAnalysisPort.AIAnalysisResult(
             "AAPL", "STOCK_SPLIT", "2:1",
@@ -174,6 +217,41 @@ class CALifecycleServiceTest {
         assertThatThrownBy(() -> service.approveAction(7L))
             .isInstanceOf(CorporateActionStateException.class)
             .hasMessageContaining("Only analyzed corporate actions can be approved");
+
+        verify(caRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectActionTransitionsAggregateToRejected() {
+        CorporateAction ca = analyzed("AAPL");
+        when(caRepository.findById(7L)).thenReturn(Optional.of(ca));
+
+        service.rejectAction(7L);
+
+        assertThat(ca.getStatus()).isEqualTo(CorporateAction.Status.REJECTED);
+        verify(caRepository).save(ca);
+    }
+
+    @Test
+    void rejectActionFailsFastForUnknownId() {
+        when(caRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.rejectAction(99L))
+            .isInstanceOf(CorporateActionNotFoundException.class)
+            .hasMessageContaining("99");
+
+        verify(caRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectActionRejectsInvalidLifecycleTransition() {
+        CorporateAction ca = analyzed("AAPL");
+        ca.approve();
+        when(caRepository.findById(7L)).thenReturn(Optional.of(ca));
+
+        assertThatThrownBy(() -> service.rejectAction(7L))
+            .isInstanceOf(CorporateActionStateException.class)
+            .hasMessageContaining("Only analyzed corporate actions can be rejected");
 
         verify(caRepository, never()).save(any());
     }

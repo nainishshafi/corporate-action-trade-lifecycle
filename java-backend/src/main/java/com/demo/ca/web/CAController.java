@@ -29,4 +29,9 @@ public class CAController {
     public void approve(@PathVariable Long id) {
         lifecycleUseCase.approveAction(id);
     }
+
+    @PostMapping("/{id}/reject")
+    public void reject(@PathVariable Long id) {
+        lifecycleUseCase.rejectAction(id);
+    }
 }

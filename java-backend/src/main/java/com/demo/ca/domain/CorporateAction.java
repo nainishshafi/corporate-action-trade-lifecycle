@@ -29,7 +29,8 @@ import java.util.regex.Pattern;
 @Entity
 public class CorporateAction {
 
-    private static final Pattern RATIO_PATTERN = Pattern.compile("^\\d+:\\d+$");
+    private static final Pattern RATIO_PATTERN =
+        Pattern.compile("^(?:N/A|[1-9]\\d*(?:\\.\\d+)?:[1-9]\\d*(?:\\.\\d+)?)$");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -53,7 +54,7 @@ public class CorporateAction {
     private List<PositionImpact> impacts = new ArrayList<>();
 
     public enum Status {
-        PENDING, ANALYZED, APPROVED, EXECUTED
+        PENDING, ANALYZED, APPROVED, REJECTED, EXECUTED
     }
 
     /**
@@ -109,10 +110,23 @@ public class CorporateAction {
         this.status = Status.APPROVED;
     }
 
+    /**
+     * Records the human-in-the-loop rejection decision.
+     */
+    public void reject() {
+        if (status != Status.ANALYZED) {
+            throw new CorporateActionStateException(
+                id,
+                status,
+                "Only analyzed corporate actions can be rejected");
+        }
+        this.status = Status.REJECTED;
+    }
+
     private static String validateRatio(String ratio) {
         String text = requireText(ratio, "ratio");
         if (!RATIO_PATTERN.matcher(text).matches()) {
-            throw new IllegalArgumentException("ratio must follow format 'N:M'");
+            throw new IllegalArgumentException("ratio must follow format 'N:M' (positive numbers) or 'N/A'");
         }
         return text;
     }

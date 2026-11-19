@@ -29,12 +29,16 @@ public class AIAgentClient implements AIAnalysisPort {
     @Retry(name = "aiAgent")
     public AIAnalysisResult analyze(String rawMessage) {
         log.info("Calling AI Reasoning Agent at {}", aiAgentProperties.url());
-        return restClient.post()
+        AIAnalysisResult result = restClient.post()
             .uri(aiAgentProperties.url())
             .contentType(MediaType.APPLICATION_JSON)
             .body(Map.of("raw_message", rawMessage))
             .retrieve()
             .body(AIAnalysisResult.class);
+        if (result == null) {
+            throw new IllegalStateException("AI Reasoning Agent returned an empty response body");
+        }
+        return result;
     }
 
     public AIAnalysisResult fallbackAnalyze(String rawMessage, Throwable t) {

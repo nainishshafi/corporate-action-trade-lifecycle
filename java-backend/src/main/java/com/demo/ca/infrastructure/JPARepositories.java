@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,10 +33,27 @@ public class JPARepositories implements CorporateActionRepository {
     public Optional<CorporateAction> findById(Long id) {
         return caRepo.findById(id);
     }
+
+    @Override
+    public boolean existsAwaitingApproval(String securityId, String actionType, String ratio, LocalDate exDate) {
+        return caRepo.existsByStatusAndSecurityIdAndActionTypeAndRatioAndExDate(
+            CorporateAction.Status.ANALYZED,
+            securityId,
+            actionType,
+            ratio,
+            exDate);
+    }
 }
 
 interface SpringDataCorporateActionRepository extends JpaRepository<CorporateAction, Long> {
 
     @EntityGraph(attributePaths = "impacts")
     List<CorporateAction> findByStatusOrderByIdAsc(CorporateAction.Status status);
+
+    boolean existsByStatusAndSecurityIdAndActionTypeAndRatioAndExDate(
+        CorporateAction.Status status,
+        String securityId,
+        String actionType,
+        String ratio,
+        LocalDate exDate);
 }

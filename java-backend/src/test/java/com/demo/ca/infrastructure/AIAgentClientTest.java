@@ -7,10 +7,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -57,6 +57,24 @@ class AIAgentClientTest {
         assertThat(result.ratio()).isEqualTo("2:1");
         assertThat(result.impacts()).hasSize(1);
         assertThat(result.impacts().get(0).newQuantity()).isEqualByComparingTo("200.0");
+        server.verify();
+    }
+
+    @Test
+    void throwsIllegalStateOnEmptyResponseBody() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        server.expect(requestTo(AGENT_URL))
+            .andExpect(method(HttpMethod.POST))
+            .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        AIAgentClient client = new AIAgentClient(
+            restClientBuilder.build(),
+            new AIAgentProperties(AGENT_URL, Duration.ofSeconds(2), Duration.ofSeconds(10)));
+
+        assertThatThrownBy(() -> client.analyze("MT564 AAPL"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("empty response body");
         server.verify();
     }
 

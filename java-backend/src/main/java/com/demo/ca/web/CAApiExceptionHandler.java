@@ -2,6 +2,7 @@ package com.demo.ca.web;
 
 import com.demo.ca.application.CorporateActionNotFoundException;
 import com.demo.ca.domain.CorporateActionStateException;
+import com.demo.ca.infrastructure.AIAgentClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -22,5 +23,10 @@ public class CAApiExceptionHandler {
     @ExceptionHandler(CorporateActionStateException.class)
     public ProblemDetail handleInvalidState(CorporateActionStateException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(AIAgentClient.AIAnalysisUnavailableException.class)
+    public ProblemDetail handleAiUnavailable(AIAgentClient.AIAnalysisUnavailableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
     }
 }

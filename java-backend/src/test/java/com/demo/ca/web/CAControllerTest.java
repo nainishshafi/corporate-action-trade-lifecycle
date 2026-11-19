@@ -84,4 +84,30 @@ class CAControllerTest {
         mockMvc.perform(post("/api/ca/42/approve"))
             .andExpect(status().isConflict());
     }
+
+    @Test
+    void rejectEndpointDelegatesToUseCase() throws Exception {
+        mockMvc.perform(post("/api/ca/42/reject"))
+            .andExpect(status().isOk());
+
+        verify(lifecycleUseCase).rejectAction(42L);
+    }
+
+    @Test
+    void rejectReturns404WhenActionDoesNotExist() throws Exception {
+        doThrow(new CorporateActionNotFoundException(42L)).when(lifecycleUseCase).rejectAction(42L);
+
+        mockMvc.perform(post("/api/ca/42/reject"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejectReturns409WhenActionIsNotAwaitingApproval() throws Exception {
+        doThrow(new CorporateActionStateException(42L, CorporateAction.Status.REJECTED,
+            "Only analyzed corporate actions can be rejected"))
+            .when(lifecycleUseCase).rejectAction(42L);
+
+        mockMvc.perform(post("/api/ca/42/reject"))
+            .andExpect(status().isConflict());
+    }
 }

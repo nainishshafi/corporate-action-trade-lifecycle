@@ -6,4 +6,5 @@ public interface CALifecycleUseCase {
     void processNotification(String rawMessage);
     List<CorporateActionView> getPendingActions();
     void approveAction(Long id);
+    void rejectAction(Long id);
 }
